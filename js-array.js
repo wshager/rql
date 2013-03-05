@@ -49,6 +49,15 @@ exports.operators = {
 	match: filter(function(value, regex){
 		return new RegExp(regex).test(value);
 	}),
+	matches: filter(function(value, regex){
+		return new RegExp(regex).test(value);
+	}),
+	exists: filter(function(value, property){
+		return value.hasOwnProperty(property) && value[property];
+	}),
+	empty: filter(function(value, property){
+		return !value.hasOwnProperty(property) || !value[property] || (value[property] instanceof Array && !value[property].length);
+	}),
 	"in": filter(function(value, values){
 		return values.indexOf(value) > -1;
 	}),
@@ -56,6 +65,7 @@ exports.operators = {
 		return values.indexOf(value) == -1;
 	}),
 	contains: filter(function(array, value){
+		if(!array) return false;
 		if(typeof value == "function"){
 			return array instanceof Array && array.some(function(v){
 				return value.call([v]).length;
@@ -66,6 +76,7 @@ exports.operators = {
 		}
 	}),
 	excludes: filter(function(array, value){
+		if(!array) return true;
 		if(typeof value == "function"){
 			return !array.some(function(v){
 				return value.call([v]).length;
