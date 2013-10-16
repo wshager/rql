@@ -362,16 +362,16 @@ exports.missingOperator = function(operator){
 function query(query, options, target){
 	options = options || {};
 	query = parseQuery(query, options.parameters);
-	function t(){}
+	function t(){};
 	t.prototype = exports.operators;
 	var operators = new t;
 	// inherit from exports.operators
 	for(var i in options.operators){
 		operators[i] = options.operators[i];
 	}
-	function op(name){
-		return operators[name]||exports.missingOperator(name);
-	}
+	var op = function(name){
+		return operators[name] || exports.missingOperator(name);
+	};
 	var parameters = options.parameters || [];
 	var js = "";
 	function queryToJS(value){
@@ -409,7 +409,7 @@ function query(query, options, target){
 					if (value instanceof Date){
 						return value.valueOf();
 					}
-					return "(function(){return op('" + value.name + "').call(this" +
+					return "(function(){return "+op(value.name).toString()+".call(this" +
 						(value && value.args && value.args.length > 0 ? (", " + value.args.map(queryToJS).join(",")) : "") +
 						")})";
 				}
@@ -418,8 +418,7 @@ function query(query, options, target){
 			return typeof value === "string" ? stringify(value) : value;
 		}
 	}
-	var evaluator;
-	eval("evaluator = (function(target){return " + queryToJS(query) + ".call(target);})");
+	var evaluator = eval("(function(target){return " + queryToJS(query) + ".call(target);})");
 	return target ? evaluator(target) : evaluator;
 }
 function throwMaxIterations(){
