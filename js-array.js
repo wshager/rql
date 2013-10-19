@@ -307,7 +307,7 @@ function filter(condition, not){
 	filter.condition = condition;
 	filter.toString = function(){
 		var f = Function.prototype.toString.apply(this);
-		return f.split(/\n+/g)[0]+"var condition = "+condition.toString()+";return "+f+";}";
+		return f.split(/{/)[0]+"{var condition = "+condition.toString()+";return "+f+";}";
 	};
 	return filter;
 };
