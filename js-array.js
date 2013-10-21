@@ -309,13 +309,18 @@ function filter(condition, not){
 		var filtered = [];
 		for(var i = 0, length = this.length; i < length; i++){
 			var item = this[i];
-			if(condition(evaluateProperty(item, property), second)){
+			if(condition(exports.evaluateProperty(item, property), second)){
 				filtered.push(item);
 			}
 		}
 		return filtered;
 	};
 	filter.condition = condition;
+	filter.toString = function(){
+		return Function.prototype.toString.apply(this).replace(/(.*)(\w+)(\(\w+\.evaluateProperty.*)/,function(t,a,b,c){
+			return a+"("+condition.toString()+")"+c;
+		});
+	};
 	return filter;
 };
 function reducer(func){
