@@ -309,7 +309,7 @@ function filter(condition, not){
 		var filtered = [];
 		for(var i = 0, length = this.length; i < length; i++){
 			var item = this[i];
-			if(condition(evaluateProperty(item, property), second)){
+			if(condition(exports.evaluateProperty(item, property), second)){
 				filtered.push(item);
 			}
 		}
@@ -318,7 +318,9 @@ function filter(condition, not){
 	filter.condition = condition;
 	filter.toString = function(){
 		var f = Function.prototype.toString.apply(this);
-		return f.split(/{/)[0]+"{var condition = "+condition.toString()+";return "+f+";}";
+		var c = f.match(/(\w+)\(\w+\.evaluateProperty/)[1];
+		var a = f.split(/{/);
+		return a.shift()+"{var "+c+"="+condition.toString()+";"+a.join("{");
 	};
 	return filter;
 };
