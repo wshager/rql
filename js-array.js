@@ -317,10 +317,9 @@ function filter(condition, not){
 	};
 	filter.condition = condition;
 	filter.toString = function(){
-		var f = Function.prototype.toString.apply(this);
-		var c = f.match(/(\w+)\(\w+\.evaluateProperty/)[1];
-		var a = f.split(/{/);
-		return a.shift()+"{var "+c+"="+condition.toString()+";"+a.join("{");
+		return Function.prototype.toString.apply(this).replace(/(.*)(\w+)(\(\w+\.evaluateProperty.*)/,function(t,a,b,c){
+			return a+"("+condition.toString()+")"+c;
+		});
 	};
 	return filter;
 };
