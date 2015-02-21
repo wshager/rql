@@ -2,8 +2,8 @@
  * This module provides RQL parsing. For example:
  * var parsed = require("./parser").parse("b=3&le(c,5)");
  */
-({define:typeof define!="undefined"?define:function(deps, factory){module.exports = factory(exports);}}).
-define(["exports"], function(exports){
+({define:typeof define!="undefined"?define:function(deps, factory){module.exports = factory(exports, require("./util/contains"));}}).
+define(["exports", "./util/contains"], function(exports, contains){
 
 var operatorMap = {
 	"=": "eq",
@@ -15,6 +15,7 @@ var operatorMap = {
 	"!=": "ne"
 };
 
+
 exports.primaryKeyName = 'id';
 exports.lastSeen = ['sort', 'select', 'values', 'limit'];
 exports.jsonQueryCompatible = true;
@@ -25,6 +26,8 @@ function parse(/*String|Object*/query, parameters){
 	var term = new exports.Query();
 	var topTerm = term;
 	topTerm.cache = {}; // room for lastSeen params
+	var topTermName = topTerm.name;
+	topTerm.name = '';
 	if(typeof query === "object"){
 		if(query instanceof exports.Query){
 			return query;
@@ -51,7 +54,7 @@ function parse(/*String|Object*/query, parameters){
 	}
 	// convert FIQL to normalized call syntax form
 	query = query.replace(/(\([\+\*\$\-:\w%\._,]+\)|[\+\*\$\-:\w%\._]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([\+\*\$\-:\w%\._,]+\)|[\+\*\$\-:\w%\._]*|)/g,
-	                     //<---------       property        -----------><------  operator -----><----------------   value ------------------>
+						// <---------       property        -----------><------  operator -----><----------------   value ------------------>
 			function(t, property, operator, value){
 		if(operator.length < 3){
 			if(!operatorMap[operator]){
@@ -68,7 +71,7 @@ function parse(/*String|Object*/query, parameters){
 		query = query.substring(1);
 	}
 	var leftoverCharacters = query.replace(/(\))|([&\|,])?([\+\*\$\-:\w%\._]*)(\(?)/g,
-	                       //    <-closedParan->|<-delim-- propertyOrValue -----(> |
+							//   <-closedParan->|<-delim-- propertyOrValue -----(> |
 		function(t, closedParan, delim, propertyOrValue, openParan){
 			if(delim){
 				if(delim === "&"){
@@ -98,7 +101,7 @@ function parse(/*String|Object*/query, parameters){
 				term.args.push(stringToValue(propertyOrValue, parameters));
 
 				// cache the last seen sort(), select(), values() and limit()
-				if (exports.lastSeen.indexOf(term.name) >= 0) {
+				if (contains(exports.lastSeen, term.name)) {
 					topTerm.cache[term.name] = term.args;
 				}
 				// cache the last seen id equality
@@ -122,7 +125,7 @@ function parse(/*String|Object*/query, parameters){
 		term.args.push(newTerm);
 		term = newTerm;
 		// cache the last seen sort(), select(), values() and limit()
-		if (exports.lastSeen.indexOf(term.name) >= 0) {
+		if (contains(exports.lastSeen, term.name)) {
 			topTerm.cache[term.name] = term.args;
 		}
 	}
@@ -134,15 +137,21 @@ function parse(/*String|Object*/query, parameters){
 			throw new Error("Can not mix conjunctions within a group, use paranthesis around each set of same conjuctions (& and |)");
 		}
 	}
-    function removeParentProperty(obj) {
-    	if(obj && obj.args){
-	    	delete obj.parent;
-	    	obj.args.forEach(removeParentProperty);
-    	}
-        return obj;
-    };
-    removeParentProperty(topTerm);
-    return topTerm;
+	function removeParentProperty(obj) {
+		if(obj && obj.args){
+			delete obj.parent;
+			var args = obj.args;
+			for(var i = 0, l = args.length; i < l; i++){
+				removeParentProperty(args[i]);
+			}
+		}
+		return obj;
+	};
+	removeParentProperty(topTerm);
+	if (!topTerm.name) {
+		topTerm.name = topTermName;
+	}
+	return topTerm;
 };
 
 exports.parse = exports.parseQuery = parse;
@@ -176,12 +185,12 @@ function stringToValue(string, parameters){
 		return param_index >= 0 && parameters ? parameters[param_index] : undefined;
 	}
 	if(string.indexOf(":") > -1){
-		var parts = string.split(":",2);
+		var parts = string.split(":");
 		converter = exports.converters[parts[0]];
 		if(!converter){
 			throw new URIError("Unknown converter " + parts[0]);
 		}
-		string = parts[1];
+		string = parts.slice(1).join(':');
 	}
 	return converter(string);
 };
@@ -202,10 +211,10 @@ exports.converters = {
 		}
 		var number = +string;
 		if(isNaN(number) || number.toString() !== string){
-/*			var isoDate = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d*)?)Z$/.exec(date);
-			if (isoDate) {
-				return new Date(Date.UTC(+isoDate[1], +isoDate[2] - 1, +isoDate[3], +isoDate[4], +isoDate[5], +isoDate[6]));
-			}*/
+          /*var isoDate = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/.exec(x);
+          if (isoDate) {
+            date = new Date(Date.UTC(+isoDate[1], +isoDate[2] - 1, +isoDate[3], +isoDate[4], +isoDate[5], +isoDate[6], +isoDate[7] || 0));
+          }*/
 			string = decodeURIComponent(string);
 			if(exports.jsonQueryCompatible){
 				if(string.charAt(0) == "'" && string.charAt(string.length-1) == "'"){
@@ -238,9 +247,10 @@ exports.converters = {
 		return exports.converters.date(date);
 	},
 	date: function(x){
-		var isoDate = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d*)?)Z$/.exec(x);
+		var isoDate = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/.exec(x);
+		var date;
 		if (isoDate) {
-			date = new Date(Date.UTC(+isoDate[1], +isoDate[2] - 1, +isoDate[3], +isoDate[4], +isoDate[5], +isoDate[6]));
+			date = new Date(Date.UTC(+isoDate[1], +isoDate[2] - 1, +isoDate[3], +isoDate[4], +isoDate[5], +isoDate[6], +isoDate[7] || 0));
 		}else{
 			date = new Date(x);
 		}
@@ -248,7 +258,6 @@ exports.converters = {
 			throw new URIError("Invalid date " + x);
 		}
 		return date;
-
 	},
 	"boolean": function(x){
 		return x === "true";

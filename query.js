@@ -11,8 +11,8 @@
  */
 //({define:typeof define!="undefined"?define:function(deps, factory){module.exports = factory(exports, require("./parser"), require("./js-array"));}}).
 //define(["exports", "./parser", "./js-array"], function(exports, parser, jsarray){
-({define:typeof define!="undefined"?define:function(deps, factory){module.exports = factory(exports, require("./parser"));}}).
-define(["exports", "./parser"], function(exports, parser){
+({define:typeof define!="undefined"?define:function(deps, factory){module.exports = factory(exports, require("./parser"), require("./util/each"));}}).
+define(["exports", "./parser", "./util/each"], function(exports, parser, each){
 
 var parseQuery = parser.parseQuery;
 try{
@@ -31,7 +31,9 @@ parser.Query = function(seed, params){
 };
 exports.Query = parser.Query;
 //TODO:THE RIGHT WAY IS:exports.knownOperators = Object.keys(jsarray.operators || {}).concat(Object.keys(jsarray.jsOperatorMap || {}));
-exports.knownOperators = ["sort", "in", "not", "any", "all", "or", "and", "select", "exclude", "values", "limit", "distinct", "recurse", "aggregate", "between", "sum", "mean", "max", "min", "count", "first", "one", "eq", "ne", "le", "ge", "lt", "gt", "matches", "exists", "empty", "deep", "not", "search", "contains"];
+exports.knownOperators = ["sort", "match", "in", "out", "or", "and", "select", "contains", "excludes", "values", "limit", "distinct", "recurse", "aggregate", "between", "sum", "mean", "max", "min", "count", "first", "one", "eq", "ne", "le", "ge", "lt", "gt"];
+// Custom
+exports.knownOperators = exports.knownOperators.concat(["not", "any", "all", "matches", "exists", "empty", "deep", "search"]);
 exports.knownScalarOperators = ["mean", "sum", "min", "max", "count", "first", "one"];
 exports.arrayMethods = ["forEach", "reduce", "map", "filter", "indexOf", "some", "every"];
 
@@ -39,26 +41,29 @@ function Query(name){
 	this.name = name || "and";
 	this.args = [];
 }
+function serializeArgs(array, delimiter){
+	var results = [];
+	for(var i = 0, l = array.length; i < l; i++){
+		results.push(queryToString(array[i]));
+	}
+	return results.join(delimiter);
+}
 exports.Query.prototype = Query.prototype;
 Query.prototype.toString = function(){
 	return this.name === "and" ?
-		this.args.map(queryToString).join("&") :
+		serializeArgs(this.args, "&") :
 		queryToString(this);
 };
 
 function queryToString(part) {
 		if (part instanceof Array) {
-				return '('+part.map(function(arg) {
-						return queryToString(arg);
-				}).join(",")+')';
+				return '(' + serializeArgs(part, ",")+')';
 		}
 		if (part && part.name && part.args) {
 				return [
 						part.name,
 						"(",
-						part.args.map(function(arg, pos) {
-								return queryToString(arg);
-						}).join(","),
+						serializeArgs(part.args, ","),
 						")"
 				].join("");
 		}
@@ -106,7 +111,7 @@ exports.encodeValue = function(val) {
 };
 
 exports.updateQueryMethods = function(){
-	exports.knownOperators.forEach(function(name){
+	each(exports.knownOperators, function(name){
 		Query.prototype[name] = function(){
 			var newQuery = new Query();
 			newQuery.executor = this.executor;
@@ -116,7 +121,7 @@ exports.updateQueryMethods = function(){
 			return newQuery;
 		};
 	});
-	exports.knownScalarOperators.forEach(function(name){
+	each(exports.knownScalarOperators, function(name){
 		Query.prototype[name] = function(){
 			var newQuery = new Query();
 			newQuery.executor = this.executor;
@@ -126,7 +131,8 @@ exports.updateQueryMethods = function(){
 			return newQuery.executor(newQuery);
 		};
 	});
-	exports.arrayMethods.forEach(function(name){
+	each(exports.arrayMethods, function(name){
+		// this makes no guarantee of ensuring that results supports these methods
 		Query.prototype[name] = function(){
 			var args = arguments;
 			return when(this.executor(this), function(results){
@@ -143,22 +149,35 @@ exports.updateQueryMethods();
 Query.prototype.walk = function(fn, options){
 	options = options || {};
 	function walk(name, terms){
-		(terms || []).forEach(function(term, i, arr) {
-			var args, func, key, x;
-			term != null ? term : term = {};
+		terms = terms || [];
+
+		var i = 0,
+			l = terms.length,
+			term,
+			args,
+			func,
+			newTerm;
+
+		for (; i < l; i++) {
+			term = terms[i];
+			if (term == null) {
+				term = {};
+			}
 			func = term.name;
 			args = term.args;
 			if (!func || !args) {
-				return;
+				continue;
 			}
 			if (args[0] instanceof Query) {
 				walk.call(this, func, args);
-			} else {
-				var newTerm = fn.call(this, func, args);
-				if (newTerm && newTerm.name && newTerm.args)
-					arr[i] = newTerm;
 			}
-		});
+			else {
+				newTerm = fn.call(this, func, args);
+				if (newTerm && newTerm.name && newTerm.ags) {
+					terms[i] = newTerm;
+				}
+			}
+		}
 	}
 	walk.call(this, this.name, this.args);
 };
@@ -222,7 +241,7 @@ Query.prototype.normalize = function(options){
 			// cache primary key equality -- useful to distinguish between .get(id) and .query(query)
 			var t = typeof args[1];
 			//if ((args[0] instanceof Array ? args[0][args[0].length-1] : args[0]) === options.primaryKey && ['string','number'].indexOf(t) >= 0) {
-			if (args[0] === options.primaryKey && ['string','number'].indexOf(t) >= 0) {
+			if (args[0] === options.primaryKey && ('string' === t || 'number' === t)) {
 				result.pk = String(args[1]);
 			}
 		}
